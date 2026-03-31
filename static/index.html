@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyShield - Threat Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-cyan-400">CyShield</h1>
+            <p class="text-gray-400">Threat Intelligence Platform</p>
+        </header>
+
+        <!-- Stats -->
+        <div id="stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-2xl font-bold text-cyan-400" id="stat-total">-</div>
+                <div class="text-gray-400 text-sm">Total Indicators</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-2xl font-bold text-green-400" id="stat-sources">-</div>
+                <div class="text-gray-400 text-sm">Sources</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-2xl font-bold text-yellow-400" id="stat-urls">-</div>
+                <div class="text-gray-400 text-sm">URLs</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-2xl font-bold text-red-400" id="stat-ips">-</div>
+                <div class="text-gray-400 text-sm">IPs</div>
+            </div>
+        </div>
+
+        <!-- Search -->
+        <div class="mb-8">
+            <div class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="search-input" 
+                    placeholder="Search indicators (IP, URL, domain...)" 
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500"
+                >
+                <button 
+                    onclick="search()" 
+                    class="bg-cyan-600 hover:bg-cyan-700 px-6 py-3 rounded-lg font-medium"
+                >
+                    Search
+                </button>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="bg-gray-800 rounded-lg overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="font-semibold">Recent Indicators</h2>
+                <span id="result-count" class="text-gray-400 text-sm"></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-sm">Indicator</th>
+                            <th class="px-4 py-3 text-left text-sm">Type</th>
+                            <th class="px-4 py-3 text-left text-sm">Source</th>
+                            <th class="px-4 py-3 text-left text-sm">Tags</th>
+                            <th class="px-4 py-3 text-left text-sm">Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body" class="divide-y divide-gray-700">
+                        <tr>
+                            <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                                Enter a search term to find indicators
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load stats on page load
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                
+                document.getElementById('stat-total').textContent = data.total_indicators.toLocaleString();
+                document.getElementById('stat-sources').textContent = data.total_sources;
+                document.getElementById('stat-urls').textContent = (data.by_type.url || 0).toLocaleString();
+                document.getElementById('stat-ips').textContent = (data.by_type.ip || 0).toLocaleString();
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+        }
+
+        // Render indicators in table
+        function renderIndicators(data, isSearch = false) {
+            const tbody = document.getElementById('results-body');
+            document.getElementById('result-count').textContent = `${data.length} results`;
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No results found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(ind => `
+                <tr class="hover:bg-gray-700">
+                    <td class="px-4 py-3 font-mono text-sm break-all max-w-md">${escapeHtml(ind.value)}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-1 rounded text-xs ${getTypeColor(ind.type)}">${ind.type}</span>
+                    </td>
+                    <td class="px-4 py-3 text-sm">${ind.source}</td>
+                    <td class="px-4 py-3 text-sm text-gray-400">${ind.tags || '-'}</td>
+                    <td class="px-4 py-3 text-sm text-gray-400">${formatDate(ind.last_seen)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Load recent indicators on page load
+        async function loadRecent() {
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Loading...</td></tr>';
+
+            try {
+                const res = await fetch('/api/indicators?limit=50');
+                const data = await res.json();
+                renderIndicators(data);
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-red-400">Error loading data</td></tr>';
+            }
+        }
+
+        // Search
+        async function search() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) {
+                loadRecent();
+                return;
+            }
+
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Searching...</td></tr>';
+
+            try {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                renderIndicators(data, true);
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-red-400">Error loading results</td></tr>';
+            }
+        }
+
+        function getTypeColor(type) {
+            const colors = {
+                'ip': 'bg-red-900 text-red-300',
+                'url': 'bg-yellow-900 text-yellow-300',
+                'domain': 'bg-blue-900 text-blue-300',
+                'hash': 'bg-purple-900 text-purple-300',
+            };
+            return colors[type] || 'bg-gray-700 text-gray-300';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Handle enter key
+        document.getElementById('search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') search();
+        });
+
+        // Init
+        loadStats();
+        loadRecent();
+    </script>
+</body>
+</html>
