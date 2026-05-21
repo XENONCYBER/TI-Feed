@@ -13,6 +13,10 @@ class Indicator(Base):
     tags = Column(Text, nullable=True)  # comma-separated
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, nullable=False, default="active")
+    notes = Column(Text, nullable=False, default="")
+    country = Column(String, nullable=True)
+    asn = Column(String, nullable=True)
 
     class Config:
         orm_mode = True
